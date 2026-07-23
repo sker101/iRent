@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/providers/auth_provider.dart';
+import '../../core/router/app_router.dart';
 import '../../models/property.dart';
 
 // ── Amenity display catalogue ──────────────────────────────────────────────
@@ -432,6 +433,13 @@ class _RoomDetailScreenState extends ConsumerState<RoomDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: context.canPop()
+            ? const BackButton()
+            : IconButton(
+                icon: const Icon(Icons.home_rounded),
+                onPressed: () => context.go(AppRoutes.rooms),
+                tooltip: 'Home',
+              ),
         title: Text(p.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           if (isOwner)
