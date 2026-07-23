@@ -966,51 +966,33 @@ class _RoomDetailScreenState extends ConsumerState<RoomDetailScreen> {
                 ),
               )
                    : isAlreadyReserved
-                ? Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.orange.shade300),
+                ? FilledButton.icon(
+                    onPressed: null,
+                    style: FilledButton.styleFrom(
+                      disabledBackgroundColor: Colors.orange.shade100,
+                      disabledForegroundColor: Colors.orange.shade800,
+                      minimumSize: const Size(double.infinity, 52),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.lock, color: Colors.orange),
-                        SizedBox(width: 8),
-                        Text('This room has been reserved',
-                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
-                      ],
+                    icon: const Icon(Icons.lock),
+                    label: const Text(
+                      'This room has been reserved',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                     ),
                   )
                 : _hasActiveBooking
-                ? Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.blue.shade200),
+                ? FilledButton.icon(
+                    onPressed: null,
+                    style: FilledButton.styleFrom(
+                      disabledBackgroundColor: Colors.blue.shade100,
+                      disabledForegroundColor: Colors.blue.shade800,
+                      minimumSize: const Size(double.infinity, 52),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.home, color: Colors.blue.shade700),
-                            const SizedBox(width: 8),
-                            Text(
-                              'You already have a reserved room',
-                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade700),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'A tenant can only reserve one room at a time. Go to My Room to view it.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 12, color: Colors.blue.shade600),
-                        ),
-                      ],
+                    icon: const Icon(Icons.info_outline),
+                    label: const Text(
+                      'You already paid for a room',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                     ),
                   )
                 : FilledButton.icon(
