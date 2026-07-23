@@ -35,6 +35,7 @@ class Property {
     this.dalaliId,
     this.uploaderName,
     this.uploaderRole,
+    this.uploaderPhone,
   });
 
   final String id;
@@ -75,6 +76,7 @@ class Property {
   final String? dalaliId;
   final String? uploaderName;
   final String? uploaderRole;
+  final String? uploaderPhone;
 
   /// Total monthly utility charges
   double get totalMonthlyUtilities =>
@@ -120,20 +122,23 @@ class Property {
     // Attempt to parse uploader from joined users table
     String? uploaderName;
     String? uploaderRole;
+    String? uploaderPhone;
     
     // Supabase join typically returns a nested object if we query users!owner_id(...)
     // Let's check for an 'owner' or 'dalali' key, or parse from 'users' if returned that way.
-    // We'll standardize on alias 'uploader' in the query: `uploader:users!owner_id(full_name, role)`
+    // We'll standardize on alias 'uploader' in the query: `uploader:users!owner_id(full_name, role, phone)`
     final rawUploader = json['uploader'];
     if (rawUploader is Map) {
       uploaderName = rawUploader['full_name'] as String?;
       uploaderRole = rawUploader['role'] as String?;
+      uploaderPhone = rawUploader['phone'] as String?;
     } else {
       // fallback in case query returns 'users' object
       final rawUsers = json['users'];
       if (rawUsers is Map) {
         uploaderName = rawUsers['full_name'] as String?;
         uploaderRole = rawUsers['role'] as String?;
+        uploaderPhone = rawUsers['phone'] as String?;
       }
     }
 
@@ -172,6 +177,7 @@ class Property {
       dalaliId: json['dalali_id'] as String?,
       uploaderName: uploaderName,
       uploaderRole: uploaderRole,
+      uploaderPhone: uploaderPhone,
     );
   }
 }

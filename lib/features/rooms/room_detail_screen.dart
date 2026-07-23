@@ -53,11 +53,37 @@ class _RoomDetailScreenState extends ConsumerState<RoomDetailScreen> {
   bool _reserving = false;
   bool _hasActiveBooking = false;   // true if tenant already has a reserved room
   bool _checkingBooking = true;
+  bool _fetchingProperty = false;
+  Property? _property;
 
   @override
   void initState() {
     super.initState();
+    _property = widget.property;
+    if (_property == null) {
+      _fetchProperty();
+    }
     _checkExistingBooking();
+  }
+
+  Future<void> _fetchProperty() async {
+    setState(() => _fetchingProperty = true);
+    try {
+      final res = await Supabase.instance.client
+          .from('properties')
+          .select('*, property_images(url, sort_order), uploader:users!owner_id(full_name, role, phone)')
+          .eq('id', widget.propertyId)
+          .single();
+          
+      if (mounted) {
+        setState(() {
+          _property = Property.fromJson(res);
+          _fetchingProperty = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _fetchingProperty = false);
+    }
   }
 
   Future<void> _checkExistingBooking() async {
@@ -383,12 +409,16 @@ class _RoomDetailScreenState extends ConsumerState<RoomDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final p = widget.property;
+    final p = _property;
 
     if (p == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Room Detail')),
-        body: const Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: _fetchingProperty 
+              ? const CircularProgressIndicator() 
+              : const Text('Room not found or no longer available.'),
+        ),
       );
     }
 
@@ -583,9 +613,11 @@ class _RoomDetailScreenState extends ConsumerState<RoomDetailScreen> {
                   // ── Uploader Profile Card ───────────────────────────
                   if (p.uploaderName != null) ...[
                     _UploaderCard(
-                      name: p.uploaderName!,
+                      name: p.uploaderName ?? 'Unknown',
                       role: p.uploaderRole ?? 'Landlord',
+                      phone: p.uploaderPhone,
                       isReserved: isAlreadyReserved,
+                      isOwner: isOwner,
                     ),
                     const SizedBox(height: 24),
                   ],
@@ -1044,12 +1076,16 @@ class _UploaderCard extends StatelessWidget {
   const _UploaderCard({
     required this.name,
     required this.role,
+    this.phone,
     required this.isReserved,
+    required this.isOwner,
   });
 
   final String name;
   final String role;
+  final String? phone;
   final bool isReserved;
+  final bool isOwner;
 
   @override
   Widget build(BuildContext context) {
@@ -1099,28 +1135,59 @@ class _UploaderCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.amber.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.lock_outline, size: 20, color: Colors.orange),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    isReserved 
-                      ? 'Contact info unlocked! Tap to chat or call.'
-                      : 'Contact info hidden. Reserve to unlock phone & chat.',
-                    style: const TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.w500),
+          if (isOwner || isReserved) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: cs.primaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.phone, color: cs.onPrimaryContainer),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isOwner ? 'Your Contact Details' : 'Landlord Contact',
+                          style: TextStyle(color: cs.onPrimaryContainer, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          phone ?? 'No phone number provided',
+                          style: TextStyle(color: cs.onPrimaryContainer, fontSize: 16, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ] else ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock_outline, size: 20, color: Colors.orange),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Contact info hidden. Reserve to unlock phone & chat.',
+                      style: TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
