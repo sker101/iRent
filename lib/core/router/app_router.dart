@@ -9,6 +9,7 @@ import '../../features/properties/add_property_screen.dart';
 import '../../features/rooms/room_detail_screen.dart';
 import '../../features/shell/landlord_dalali_shell.dart';
 import '../../features/shell/tenant_shell.dart';
+import '../providers/pending_route_provider.dart';
 import '../../models/app_user.dart';
 import '../../models/property.dart';
 
@@ -126,7 +127,17 @@ String? _redirect(Ref ref, GoRouterState state) {
   }
 
   // ── Signed in with profile: bounce away from auth screens ─────────────
-  if (isAuthPath) return _homePath(profile.role);
+  if (isAuthPath) {
+    final pending = ref.read(pendingRouteProvider);
+    if (pending != null) {
+      // Clear the pending route before redirecting to avoid loops
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(pendingRouteProvider.notifier).clear();
+      });
+      return '${AppRoutes.rooms}/${pending.propertyId}';
+    }
+    return _homePath(profile.role);
+  }
 
   // ── Signed in tenant hitting the guest rooms page → go to tenant home ─
   if (path == AppRoutes.rooms && profile.role == UserRole.tenant) {

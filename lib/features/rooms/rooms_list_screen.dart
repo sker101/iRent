@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/providers/auth_provider.dart';
 import '../../core/router/app_router.dart';
+import '../../core/providers/pending_route_provider.dart';
 import '../../models/property.dart';
 import 'room_detail_screen.dart';
 
@@ -305,12 +306,12 @@ class _RoomsListScreenState extends ConsumerState<RoomsListScreen> {
 
 // ─── Property card ─────────────────────────────────────────────────────────
 
-class _PropertyCard extends StatelessWidget {
+class _PropertyCard extends ConsumerWidget {
   const _PropertyCard({required this.property});
   final Property property;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
 
     return Material(
@@ -320,7 +321,17 @@ class _PropertyCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: () {
-          context.push('${AppRoutes.rooms}/${property.id}', extra: property);
+          final user = ref.read(appUserProvider).value;
+          if (user == null) {
+            // Guest user: save pending route and show auth bottom sheet
+            ref.read(pendingRouteProvider.notifier).set(
+                  PendingRoute(propertyId: property.id, propertyExtra: property),
+                );
+            _showAuthBottomSheet(context);
+          } else {
+            // Logged in: go straight to room
+            context.push('${AppRoutes.rooms}/${property.id}', extra: property);
+          }
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -435,4 +446,62 @@ class _PlaceholderImage extends StatelessWidget {
       ),
     );
   }
+}
+
+void _showAuthBottomSheet(BuildContext context) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) {
+      final cs = Theme.of(ctx).colorScheme;
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.login_rounded, size: 48, color: cs.primary),
+              const SizedBox(height: 16),
+              Text(
+                'Sign in to view rooms',
+                style: Theme.of(ctx).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'You need an account to view full room details and make reservations. Sign in or create a new account to continue.',
+                textAlign: TextAlign.center,
+                style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    context.push(AppRoutes.login);
+                  },
+                  child: const Text('Log in / Sign up'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }
