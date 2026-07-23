@@ -84,17 +84,17 @@ class _MyRoomScreenState extends ConsumerState<MyRoomScreen> {
             'landlord:users!landlord_id(id, full_name, role)',
           )
           .eq('tenant_id', userId)
-          .order('reserved_at', ascending: false);
+          // Only show active (reserved or occupied) bookings — never show completed/cancelled
+          .inFilter('status', ['reserved', 'occupied'])
+          // One room per tenant — DB partial index also enforces this
+          .order('reserved_at', ascending: false)
+          .limit(1);
 
-      final List<_BookedRoom> uniqueRooms = [];
-      final Set<String> seenProperties = {};
+      final List<_BookedRoom> rooms = [];
 
       for (final b in (res as List)) {
         final prop = b['properties'] as Map? ?? {};
         final propertyId = prop['id'] as String? ?? '';
-        
-        if (seenProperties.contains(propertyId)) continue;
-        seenProperties.add(propertyId);
 
         final landlord = b['landlord'] as Map? ?? {};
         final imgs = prop['property_images'] as List? ?? [];
@@ -118,7 +118,7 @@ class _MyRoomScreenState extends ConsumerState<MyRoomScreen> {
           }
         }
 
-        uniqueRooms.add(_BookedRoom(
+        rooms.add(_BookedRoom(
           propertyId: propertyId,
           bookingId: b['id'] as String? ?? '',
           title: prop['title'] as String? ?? 'Property',
@@ -137,7 +137,7 @@ class _MyRoomScreenState extends ConsumerState<MyRoomScreen> {
           landlordContractUrl: b['landlord_contract_url'] as String?,
         ));
       }
-      return uniqueRooms;
+      return rooms;
     } catch (e) {
       return [];
     }
