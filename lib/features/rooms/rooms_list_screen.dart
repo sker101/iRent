@@ -61,8 +61,10 @@ class _RoomsListScreenState extends ConsumerState<RoomsListScreen> {
       var query = Supabase.instance.client
           .from('properties')
           .select(
-            '*, property_images(url, sort_order), uploader:users!owner_id(full_name, role)',
-          );
+            '*, property_images(url, sort_order), uploader:users!owner_id(full_name, role, phone)',
+          )
+          // ── KEY FILTER: only show rooms that are available (not reserved/paid) ──
+          .eq('status', 'live');
 
       if (_filter.district.trim().isNotEmpty) {
         query = query.ilike('district', '%${_filter.district.trim()}%');
