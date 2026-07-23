@@ -17,6 +17,7 @@ class Property {
     this.latitude,
     this.longitude,
     this.genderPreference,
+    this.houseRules,
     this.availableFrom,
     // utilities
     this.electricityCost = 0,
@@ -53,6 +54,7 @@ class Property {
   final double? latitude;
   final double? longitude;
   final String? genderPreference;
+  final String? houseRules;
   final DateTime? availableFrom;
 
   // utilities
@@ -153,6 +155,7 @@ class Property {
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
       genderPreference: json['gender_preference'] as String?,
+      houseRules: json['house_rules'] as String?,
       availableFrom: json['available_from'] != null
           ? DateTime.tryParse(json['available_from'] as String)
           : null,

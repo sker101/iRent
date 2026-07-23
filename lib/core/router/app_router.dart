@@ -5,21 +5,21 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../features/auth/google_login_screen.dart';
 import '../../features/auth/complete_profile_screen.dart';
-import '../../features/dalali_dashboard/dalali_dashboard_screen.dart';
-import '../../features/landlord_dashboard/landlord_dashboard_screen.dart';
 import '../../features/properties/add_property_screen.dart';
 import '../../features/rooms/room_detail_screen.dart';
-import '../../features/rooms/rooms_list_screen.dart';
-import '../../features/tenant_dashboard/tenant_dashboard_screen.dart';
+import '../../features/shell/landlord_dalali_shell.dart';
+import '../../features/shell/tenant_shell.dart';
 import '../../models/app_user.dart';
 import '../../models/property.dart';
 
 class AppRoutes {
   static const login = '/auth/login';
   static const completeProfile = '/auth/complete-profile';
-  static const tenantDashboard = '/dashboard/tenant';
-  static const dalaliDashboard = '/dashboard/dalali';
-  static const landlordDashboard = '/dashboard/landlord';
+  // Shell roots (each role now has ONE route that contains its bottom-nav shell)
+  static const tenantHome = '/tenant';
+  static const landlordHome = '/landlord';
+  static const dalaliHome = '/dalali';
+  // Shared
   static const rooms = '/rooms';
   static const roomDetail = '/rooms/:id';
   static const addProperty = '/properties/add';
@@ -33,7 +33,8 @@ class RouterNotifier extends ChangeNotifier {
   final Ref ref;
 }
 
-final routerNotifierProvider = Provider<RouterNotifier>((ref) => RouterNotifier(ref));
+final routerNotifierProvider =
+    Provider<RouterNotifier>((ref) => RouterNotifier(ref));
 
 final routerProvider = Provider<GoRouter>((ref) {
   final notifier = ref.watch(routerNotifierProvider);
@@ -52,19 +53,31 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const CompleteProfileScreen(),
       ),
 
-      // ── Dashboards ────────────────────────────────────────────────────
+      // ── Guest / Tenant shell (rooms list with bottom nav) ─────────────
       GoRoute(
-        path: AppRoutes.tenantDashboard,
-        builder: (_, _) => const TenantDashboardScreen(),
+        path: AppRoutes.rooms,
+        builder: (_, _) => const GuestShell(),
       ),
+
+      // ── Tenant authenticated shell ─────────────────────────────────────
       GoRoute(
-        path: AppRoutes.dalaliDashboard,
-        builder: (_, _) => const DalaliDashboardScreen(),
+        path: AppRoutes.tenantHome,
+        builder: (_, _) => const TenantShell(),
       ),
+
+      // ── Landlord shell ────────────────────────────────────────────────
       GoRoute(
-        path: AppRoutes.landlordDashboard,
-        builder: (_, _) => const LandlordDashboardScreen(),
+        path: AppRoutes.landlordHome,
+        builder: (_, _) => const LandlordDalaliShell(),
       ),
+
+      // ── Dalali shell ──────────────────────────────────────────────────
+      GoRoute(
+        path: AppRoutes.dalaliHome,
+        builder: (_, _) => const LandlordDalaliShell(),
+      ),
+
+      // ── Add property (shared) ─────────────────────────────────────────
       GoRoute(
         path: AppRoutes.addProperty,
         builder: (_, state) {
@@ -74,11 +87,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
 
-      // ── Rooms (shared across roles) ───────────────────────────────────
-      GoRoute(
-        path: AppRoutes.rooms,
-        builder: (_, _) => const RoomsListScreen(),
-      ),
+      // ── Room detail (shared) ──────────────────────────────────────────
       GoRoute(
         path: AppRoutes.roomDetail,
         builder: (context, state) {
@@ -98,38 +107,52 @@ String? _redirect(Ref ref, GoRouterState state) {
   final path = state.uri.path;
   final isAuthPath = path.startsWith('/auth');
 
-  // Not signed in
+  // ── Not signed in: allow rooms (guest shell) and login page ───────────
   if (session == null) {
     if (path == AppRoutes.login || path == AppRoutes.rooms) return null;
-    return AppRoutes.login;
+    // Any other protected path → back to rooms (guest shell)
+    return AppRoutes.rooms;
   }
 
-  // Still fetching the profile
+  // ── Still fetching profile ────────────────────────────────────────────
   if (appUserAsync.isLoading && !appUserAsync.hasValue) return null;
 
   final profile = appUserAsync.value;
 
-  // Signed in, but missing profile
+  // ── Signed in, but no profile row yet → complete profile ──────────────
   if (profile == null) {
     if (path == AppRoutes.completeProfile) return null;
     return AppRoutes.completeProfile;
   }
 
-  // Signed in and profile exists, don't allow access to auth screens
-  if (isAuthPath) return _dashboardPath(profile.role);
+  // ── Signed in with profile: bounce away from auth screens ─────────────
+  if (isAuthPath) return _homePath(profile.role);
+
+  // ── Signed in tenant hitting the guest rooms page → go to tenant home ─
+  if (path == AppRoutes.rooms && profile.role == UserRole.tenant) {
+    return AppRoutes.tenantHome;
+  }
+
+  // ── Landlord/Dalali hitting rooms page → go to their home ─────────────
+  if (path == AppRoutes.rooms &&
+      (profile.role == UserRole.landlord ||
+          profile.role == UserRole.dalali ||
+          profile.role == UserRole.admin)) {
+    return _homePath(profile.role);
+  }
 
   return null;
 }
 
-String _dashboardPath(UserRole role) {
+String _homePath(UserRole role) {
   switch (role) {
     case UserRole.tenant:
-      return AppRoutes.tenantDashboard;
+      return AppRoutes.tenantHome;
     case UserRole.dalali:
-      return AppRoutes.dalaliDashboard;
+      return AppRoutes.dalaliHome;
     case UserRole.landlord:
-      return AppRoutes.landlordDashboard;
+      return AppRoutes.landlordHome;
     case UserRole.admin:
-      return AppRoutes.tenantDashboard;
+      return AppRoutes.landlordHome;
   }
 }

@@ -51,6 +51,7 @@ dependencies:
   latlong2: ^0.10.1
   intl: ^0.20.3
   url_launcher: ^6.3.2
+  fl_chart: ^1.2.0
 
 dev_dependencies:
   flutter_test:

@@ -51,66 +51,306 @@ class _RoomDetailScreenState extends ConsumerState<RoomDetailScreen> {
   int _currentImageIndex = 0;
   int _durationMonths = 1;
   bool _reserving = false;
+  bool _hasActiveBooking = false;   // true if tenant already has a reserved room
+  bool _checkingBooking = true;
 
-  // Platform fee rate: 5% of 1 month's rent
-  double _platformFee(double price) => price * 0.05;
-  // Gateway fee: 3.5% of platform fee
-  double _gatewayFee(double price) => _platformFee(price) * 0.035;
-  // Total to pay online
-  double _totalOnline(double price) => _platformFee(price) + _gatewayFee(price);
+  @override
+  void initState() {
+    super.initState();
+    _checkExistingBooking();
+  }
 
-  // ── Reserve ────────────────────────────────────────────────────────────
+  Future<void> _checkExistingBooking() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) { if (mounted) setState(() => _checkingBooking = false); return; }
+
+      // Find the user row from the users table
+      final userRow = await Supabase.instance.client
+          .from('users')
+          .select('id')
+          .eq('auth_id', user.id)
+          .maybeSingle();
+
+      if (userRow == null) { if (mounted) setState(() => _checkingBooking = false); return; }
+
+      final tenantId = userRow['id'] as String;
+
+      // Check for any active (reserved or occupied) bookings for this tenant
+      final existing = await Supabase.instance.client
+          .from('bookings')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .inFilter('status', ['reserved', 'occupied'])
+          .limit(1);
+
+      if (mounted) setState(() {
+        _hasActiveBooking = (existing as List).isNotEmpty;
+        _checkingBooking = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _checkingBooking = false);
+    }
+  }
+
+  // Fee structure (all % of 1 month's rent)
+  double _platformFee(double price) => price * 0.05;          // 5%  iRent fee
+  double _gatewayFee(double price) => price * 0.035;          // 3.5% gateway fee
+  double _serviceFee(double price) => price * 0.20;           // 20% service / dalali fee
+  double _totalOnline(double price) =>                        // 28.5% total
+      _platformFee(price) + _gatewayFee(price) + _serviceFee(price);
+
+  // ── Mock Payment Flow ────────────────────────────────────────────────────
 
   Future<void> _reserve(Property p) async {
     final user = ref.read(appUserProvider).value;
-    if (user == null) return;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to reserve a room')),
+      );
+      return;
+    }
+    // Show payment confirmation sheet first
+    await _showMockPaymentSheet(p, user.id);
+  }
 
+  Future<void> _showMockPaymentSheet(Property p, String tenantId) async {
+    final totalRent = p.price * _durationMonths;
+    final fee = _platformFee(p.price);
+    final gateway = _gatewayFee(p.price);
+    final serviceFee = _serviceFee(p.price);
+    final toPay = fee + gateway + serviceFee;
+    final startDate = DateTime.now();
+    final endDate = DateTime(startDate.year, startDate.month + _durationMonths, startDate.day);
+    final fmt = NumberFormat('#,###');
+    final dateFmt = DateFormat('dd MMM yyyy');
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20, right: 20, top: 20,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Title
+                const Row(
+                  children: [
+                    Icon(Icons.payment, color: Colors.green),
+                    SizedBox(width: 10),
+                    Text('Confirm Payment',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text('Mock Payment — Selcom integration coming soon',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                const SizedBox(height: 20),
+                // Room info
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: p.imageUrls.isNotEmpty
+                            ? Image.network(p.imageUrls.first,
+                                width: 56, height: 56, fit: BoxFit.cover)
+                            : Container(
+                                width: 56, height: 56,
+                                color: Colors.grey.shade300,
+                                child: const Icon(Icons.apartment_rounded),
+                              ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(p.title,
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                            Text(p.locationLabel,
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                            Text('$_durationMonths month(s)',
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Duration / Dates
+                _PayRow(label: 'Lease start', value: dateFmt.format(startDate)),
+                _PayRow(label: 'Lease end', value: dateFmt.format(endDate)),
+                const Divider(height: 24),
+                // Cost breakdown — what is paid NOW to reserve
+                Row(
+                  children: [
+                    Icon(Icons.receipt_long, size: 14, color: Colors.grey.shade600),
+                    const SizedBox(width: 6),
+                    Text('Amount to pay online (28.5% of 1 mo rent)',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey.shade600)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _PayRow(label: 'iRent fee (5%)', value: 'TSH ${fmt.format(fee.round())}'),
+                _PayRow(label: 'Gateway fee (3.5%)', value: 'TSH ${fmt.format(gateway.round())}'),
+                _PayRow(
+                  label: p.dalaliId != null ? 'Service fee — Dalali (20%)' : 'Service fee (20%)',
+                  value: 'TSH ${fmt.format(serviceFee.round())}',
+                ),
+                const Divider(height: 16),
+                _PayRow(
+                  label: 'Total to pay now',
+                  value: 'TSH ${fmt.format(toPay.round())}',
+                  bold: true,
+                  color: Colors.green.shade700,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Remaining rent (TSH ${fmt.format(totalRent.round())}) paid in cash to landlord at move-in.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                ),
+                const SizedBox(height: 24),
+                // Pay button
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.green.shade600,
+                      minimumSize: const Size(double.infinity, 52),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.lock),
+                    label: Text(
+                      'Pay TSH ${fmt.format(toPay.round())} & Reserve',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: _reserving
+                        ? null
+                        : () async {
+                            Navigator.of(ctx).pop();
+                            await _doReserve(p, tenantId, startDate, endDate);
+                          },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.shield_outlined, size: 14, color: Colors.grey.shade500),
+                      const SizedBox(width: 4),
+                      Text('Secure mock payment • Selcom coming soon',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _doReserve(Property p, String tenantId, DateTime start, DateTime end) async {
     setState(() => _reserving = true);
 
     try {
       final client = Supabase.instance.client;
 
-      // 1 — Insert booking
+      // 0 — Server-side guard: ensure tenant has no existing active booking
+      final existing = await client
+          .from('bookings')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .inFilter('status', ['reserved', 'occupied'])
+          .limit(1);
+
+      if ((existing as List).isNotEmpty) {
+        if (mounted) {
+          setState(() { _hasActiveBooking = true; _reserving = false; });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You already have a reserved room. Release it first.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // 1 — Insert booking with lease dates
       await client.from('bookings').insert({
         'property_id': p.id,
-        'tenant_id': user.id,
-        'landlord_id': p.id, // placeholder — real owner resolving comes with real auth
+        'tenant_id': tenantId,
+        'landlord_id': p.ownerId,
         'duration_months': _durationMonths,
         'rent_amount': p.price,
-        'reservation_fee': _platformFee(p.price),
-        'dalali_fee': 0,
+        'reservation_fee': _platformFee(p.price) + _gatewayFee(p.price),
+        'dalali_fee': _serviceFee(p.price),   // 20% service fee (goes to dalali or iRent if landlord)
         'status': 'reserved',
-        'reserved_at': DateTime.now().toIso8601String(),
+        'reserved_at': start.toIso8601String(),
+        'lease_start': start.toIso8601String(),
+        'lease_end': end.toIso8601String(),
       });
 
-      // 2 — Mark property as reserved → removes from live listing
+      // 2 — Mark property as reserved → hides from public listing
       await client
           .from('properties')
           .update({'status': 'reserved'})
           .eq('id', p.id);
 
       if (!mounted) return;
+      setState(() => _hasActiveBooking = true);
 
-      // 3 — Show success
+      // 3 — Success dialog
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (_) => AlertDialog(
           icon: const Icon(Icons.check_circle, color: Colors.green, size: 56),
-          title: const Text('Room Reserved!', textAlign: TextAlign.center),
+          title: const Text('Payment Successful!', textAlign: TextAlign.center),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text('You have reserved "${p.title}".', textAlign: TextAlign.center),
               const SizedBox(height: 8),
               Text(
-                'Total paid: TSH ${_fmt(_totalOnline(p.price))}',
+                'Amount paid: TSH ${NumberFormat('#,###').format(_totalOnline(p.price).round())}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               const Text(
-                'The room will appear in your dashboard under "My Rooms".',
+                'The room is now under your name and visible in "My Room".',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13),
               ),
@@ -120,9 +360,9 @@ class _RoomDetailScreenState extends ConsumerState<RoomDetailScreen> {
             FilledButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                context.pop(); // back to listing/dashboard
+                context.pop();
               },
-              child: const Text('Go to Dashboard'),
+              child: const Text('View My Room'),
             ),
           ],
         ),
@@ -130,6 +370,7 @@ class _RoomDetailScreenState extends ConsumerState<RoomDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
+
         SnackBar(content: Text('Reservation failed: $e')),
       );
     } finally {
@@ -155,13 +396,33 @@ class _RoomDetailScreenState extends ConsumerState<RoomDetailScreen> {
     final lat = p.latitude ?? -6.7924;
     final lng = p.longitude ?? 39.2083;
     final isAlreadyReserved = p.status == 'reserved';
+    final userAsync = ref.watch(appUserProvider);
+    final user = userAsync.value;
+    final isOwner = user != null && p.ownerId == user.id;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(p.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
-          IconButton(icon: const Icon(Icons.favorite_border), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.share_outlined), onPressed: () {}),
+          if (isOwner)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: FilledButton.icon(
+                onPressed: () => context.push(
+                  '/properties/add',
+                  extra: p,
+                ),
+                icon: const Icon(Icons.edit, size: 16),
+                label: const Text('Edit'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+              ),
+            )
+          else ...[
+            IconButton(icon: const Icon(Icons.favorite_border), onPressed: () {}),
+            IconButton(icon: const Icon(Icons.share_outlined), onPressed: () {}),
+          ]
         ],
       ),
       body: SingleChildScrollView(
@@ -552,17 +813,24 @@ class _RoomDetailScreenState extends ConsumerState<RoomDetailScreen> {
                               ),
                               const SizedBox(height: 12),
                               _CostRow(
-                                label: 'Platform Service Fee (5% × 1 mo rent)',
+                                label: 'iRent fee (5% × 1 mo rent)',
                                 value: 'TSH ${_fmt(_platformFee(p.price))}',
                               ),
                               const SizedBox(height: 6),
                               _CostRow(
-                                label: 'Gateway Fee (3.5% of platform fee)',
+                                label: 'Gateway fee (3.5% × 1 mo rent)',
                                 value: 'TSH ${_fmt(_gatewayFee(p.price))}',
+                              ),
+                              const SizedBox(height: 6),
+                              _CostRow(
+                                label: p.dalaliId != null
+                                    ? 'Service fee — Dalali (20%)'
+                                    : 'Service fee (20% × 1 mo rent)',
+                                value: 'TSH ${_fmt(_serviceFee(p.price))}',
                               ),
                               const Divider(height: 20),
                               _CostRow(
-                                label: 'Total to Pay Online',
+                                label: 'Total to Pay Online (28.5%)',
                                 value: 'TSH ${_fmt(_totalOnline(p.price))}',
                                 bold: true,
                               ),
@@ -647,44 +915,92 @@ class _RoomDetailScreenState extends ConsumerState<RoomDetailScreen> {
             ),
           ],
         ),
-        child: isAlreadyReserved
+        child: isOwner
             ? Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.12),
+                  color: Colors.blue.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.orange.shade300),
+                  border: Border.all(color: Colors.blue.shade300),
                 ),
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.lock, color: Colors.orange),
+                    Icon(Icons.info_outline, color: Colors.blue),
                     SizedBox(width: 8),
-                    Text('This room has been reserved',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                    Text('You own this property',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
                   ],
                 ),
               )
-            : FilledButton.icon(
-                onPressed: _reserving ? null : () => _reserve(p),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.green.shade600,
-                  minimumSize: const Size(double.infinity, 52),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                icon: _reserving
-                    ? const SizedBox(
-                        width: 18, height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.lock_open),
-                label: Text(
-                  _reserving
-                      ? 'Reserving…'
-                      : 'Reserve Now — TSH ${_fmt(_totalOnline(widget.property?.price ?? 0))}',
-                  style: const TextStyle(fontSize: 15),
-                ),
-              ),
+                   : isAlreadyReserved
+                ? Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.lock, color: Colors.orange),
+                        SizedBox(width: 8),
+                        Text('This room has been reserved',
+                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                      ],
+                    ),
+                  )
+                : _hasActiveBooking
+                ? Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.home, color: Colors.blue.shade700),
+                            const SizedBox(width: 8),
+                            Text(
+                              'You already have a reserved room',
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade700),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'A tenant can only reserve one room at a time. Go to My Room to view it.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 12, color: Colors.blue.shade600),
+                        ),
+                      ],
+                    ),
+                  )
+                : FilledButton.icon(
+                    onPressed: _reserving ? null : () => _reserve(p),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.green.shade600,
+                      minimumSize: const Size(double.infinity, 52),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: _reserving
+                        ? const SizedBox(
+                            width: 18, height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.lock_open),
+                    label: Text(
+                      _reserving
+                          ? 'Reserving…'
+                          : 'Reserve Now — TSH ${_fmt(_totalOnline(widget.property?.price ?? 0))}',
+                      style: const TextStyle(fontSize: 15),
+                    ),
+                  ),
       ),
     );
   }
@@ -959,6 +1275,38 @@ class _CostRow extends StatelessWidget {
                 color: textColor,
                 fontSize: bold ? 14 : 13)),
       ],
+    );
+  }
+}
+
+// _PayRow \u2014 used in the mock payment sheet (same layout as _CostRow)
+class _PayRow extends StatelessWidget {
+  const _PayRow({required this.label, required this.value, this.bold = false, this.color});
+  final String label;
+  final String value;
+  final bool bold;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = color ?? Theme.of(context).colorScheme.onSurface;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: TextStyle(
+                  fontSize: 13,
+                  color: textColor.withValues(alpha: bold ? 1.0 : 0.7),
+                  fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
+          Text(value,
+              style: TextStyle(
+                  fontSize: bold ? 14 : 13,
+                  fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                  color: textColor)),
+        ],
+      ),
     );
   }
 }

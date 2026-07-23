@@ -56,6 +56,7 @@ class _AddPropertyScreenState extends ConsumerState<AddPropertyScreen> {
   // basic
   String _title = '';
   String _description = '';
+  String _houseRules = '';
   double _price = 0;
   String _region = '';
   String _district = '';
@@ -99,6 +100,7 @@ class _AddPropertyScreenState extends ConsumerState<AddPropertyScreen> {
       final p = widget.propertyToEdit!;
       _title = p.title;
       _description = p.description ?? '';
+      _houseRules = p.houseRules ?? '';
       _price = p.price;
       _region = p.region ?? '';
       _district = p.district ?? '';
@@ -135,6 +137,7 @@ class _AddPropertyScreenState extends ConsumerState<AddPropertyScreen> {
         final Map<String, dynamic> data = jsonDecode(draftStr);
         _title = data['title'] ?? '';
         _description = data['description'] ?? '';
+        _houseRules = data['houseRules'] ?? '';
         _price = (data['price'] ?? 0).toDouble();
         _region = data['region'] ?? '';
         _district = data['district'] ?? '';
@@ -182,6 +185,7 @@ class _AddPropertyScreenState extends ConsumerState<AddPropertyScreen> {
     final data = {
       'title': _title,
       'description': _description,
+      'houseRules': _houseRules,
       'price': _price,
       'region': _region,
       'district': _district,
@@ -221,6 +225,7 @@ class _AddPropertyScreenState extends ConsumerState<AddPropertyScreen> {
       _hasDraft = false;
       _title = '';
       _description = '';
+      _houseRules = '';
       _price = 0;
       _region = '';
       _district = '';
@@ -312,6 +317,7 @@ class _AddPropertyScreenState extends ConsumerState<AddPropertyScreen> {
         'bedrooms': _bedrooms,
         'bathrooms': _bathrooms,
         'furnished': _furnished,
+        'house_rules': _houseRules,
         'status': 'live',
         // utilities
         'electricity_cost': double.tryParse(_elecCostCtrl.text) ?? 0,
@@ -485,6 +491,19 @@ class _AddPropertyScreenState extends ConsumerState<AddPropertyScreen> {
                     maxLines: 3,
                     onChanged: (v) { _description = v; _triggerSaveDraft(); },
                     onSaved: (v) => _description = v ?? '',
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    initialValue: _houseRules,
+                    decoration: const InputDecoration(
+                      labelText: 'House Rules',
+                      hintText: 'Rules for the tenant, to be included in the contract.',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 4,
+                    validator: (v) => v == null || v.isEmpty ? 'House rules are required for the contract' : null,
+                    onChanged: (v) { _houseRules = v; _triggerSaveDraft(); },
+                    onSaved: (v) => _houseRules = v ?? '',
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
